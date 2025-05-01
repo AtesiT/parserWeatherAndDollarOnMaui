@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="parserA.MainPage"
+    
+
+    BackgroundImageSource="https://banner2.cleanpng.com/20240306/bap/transparent-frozen-elsa-from-frozen-in-realistic-1710849331300.webp">
+    <ScrollView BackgroundColor="#5F000000">
+        <Grid Padding="30,0" RowDefinitions="*,auto">
+            <VerticalStackLayout Padding="5" VerticalOptions="Center">
+                <HorizontalStackLayout Spacing="3">
+                    <Label x:Name="rateLabel" Text="нажмите кнопку Обновить." />
+                    <Label LineBreakMode="WordWrap" Text="Курс доллара к рублю на сегодняший день:" />
+                </HorizontalStackLayout>
+                <HorizontalStackLayout Spacing="3">
+                    <Label Text="B " />
+                    <Label BindingContext="{x:Reference cityEntry}" Text="{Binding Text}" />
+                    <Label x:Name="temperatureLabel" Text="не понятно" />
+                    <Label Text="градуса по цельсию" />
+                </HorizontalStackLayout>
+                <Entry
+                    x:Name="cityEntry"
+                    Placeholder="Введите название города:"
+                    PlaceholderColor="Aqua" />
+                <Button Clicked="UpdateButtonClicked" Text="Обновить" />
+                <Label x:Name="messageLabel" LineBreakMode="CharacterWrap" />
+            </VerticalStackLayout>
+        </Grid>
+    </ScrollView>
+</ContentPage>
