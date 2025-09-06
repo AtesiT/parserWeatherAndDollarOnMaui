@@ -1,0 +1,29 @@
+[33mcommit d8fc5ebdee1e4e23a38f7520e490c521dbd863a4[m[33m ([m[1;36mHEAD[m[33m)[m
+Author: AtesiT <atesit@mail.ru>
+Date:   Sat Sep 6 21:58:50 2025 +0300
+
+    update new permissions and libraries
+
+[33mcommit c3b3ef963088822e474345f6bf27a34d72823488[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmaster[m[33m)[m
+Author: AtesiT <atesit@mail.ru>
+Date:   Wed May 14 17:41:49 2025 +0300
+
+    update icons and fix show the weather on android
+
+[33mcommit 236d19f1d046f39c9900e0763970c3e2e1c4d978[m
+Author: AtesiT <atesit@mail.ru>
+Date:   Thu May 1 14:00:23 2025 +0300
+
+    update icon of app
+
+[33mcommit 1bf29ee5f31b9f3ad9cbdf65195ce571fad31624[m
+Author: AtesiT <atesit@mail.ru>
+Date:   Thu May 1 10:44:04 2025 +0300
+
+    Добавьте файлы проекта.
+
+[33mcommit cc1acef985e9714b444d5a3a832a00d67ed066ba[m
+Author: AtesiT <atesit@mail.ru>
+Date:   Thu May 1 10:43:58 2025 +0300
+
+    Добавить .gitattributes и .gitignore.
