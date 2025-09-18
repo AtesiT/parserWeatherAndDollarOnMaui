@@ -1,20 +1,75 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Devices;
+using System.Threading;
+using System.Globalization;
 
 namespace parserA
 {
+    // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ ЦБ РФ ---
+
+    // Модель для одной валюты
+    public class CbrCurrency
+    {
+        [JsonPropertyName("Value")]
+        public double Value { get; set; }
+
+        [JsonPropertyName("Previous")]
+        public double Previous { get; set; }
+    }
+
+    // Корневая модель ответа API
+    public class CbrRates
+    {
+        [JsonPropertyName("Valute")]
+        public Dictionary<string, CbrCurrency> Valute { get; set; }
+    }
+
+        // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ UNSPLASH API ---
+
+    public class UnsplashSearchResult
+    {
+        [JsonPropertyName("results")]
+        public List<UnsplashPhoto> Results { get; set; }
+    }
+
+    public class UnsplashPhoto
+    {
+        [JsonPropertyName("urls")]
+        public UnsplashPhotoUrls Urls { get; set; }
+    }
+
+    public class UnsplashPhotoUrls
+    {
+        [JsonPropertyName("regular")]
+        public string Regular { get; set; }
+    }
+
+
+    // --- ОСНОВНОЙ КЛАСС СТРАНИЦЫ ---
+
     public partial class MainPage : ContentPage
     {
         private const string KEY = "58e310878dcae97b7fd2ed9b73f6d716";
         private HttpClient _client = new HttpClient();
         private int count = 0;
+        private bool _flashlightActive = false;
+        private CancellationTokenSource _flashlightCts;
 
         public MainPage()
         {
             InitializeComponent();
+            _flashlightCts = new CancellationTokenSource();
+            // Установим культуру, чтобы точка была разделителем для double
+            CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en-US");
+            CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo("en-US");
         }
 
+        // --- МЕТОДЫ ДЛЯ РАБОТЫ С API ---
+
+        // Старый метод, больше не используется. Можно удалить.
         private async Task<double> GetDollarRate()
         {
             var data = await _client.GetFromJsonAsync<JsonDocument>(
@@ -26,6 +81,22 @@ namespace parserA
                 return value;
             throw new Exception("Не удалось получить стоимость доллара.");
         }
+
+        // НОВЫЙ МЕТОД для получения курсов с сайта ЦБ РФ
+        private async Task<(double today, double yesterday)> GetCbrDollarRates()
+        {
+            var rates = await _client.GetFromJsonAsync<CbrRates>(
+                "https://www.cbr-xml-daily.ru/daily_json.js"
+            ) ?? throw new Exception("Не удалось загрузить курсы валют от ЦБ РФ.");
+
+            if (rates.Valute.TryGetValue("USD", out var usd))
+            {
+                return (usd.Value, usd.Previous);
+            }
+
+            throw new Exception("Не удалось найти курс доллара в ответе ЦБ РФ.");
+        }
+
 
         private async Task<(double lat, double lon)> GetLocationByName(string name)
         {
@@ -53,22 +124,68 @@ namespace parserA
             throw new Exception("Не удалось получить температуру.");
         }
 
+        // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+
         private async void UpdateButtonClicked(object sender, EventArgs e)
         {
             messageLabel.Text = string.Empty;
+
+            // --- Блок для погоды ---
             try
             {
                 (double lat, double lon) = await GetLocationByName(cityEntry.Text);
-                temperatureLabel.Text = (await GetTemperature(lat, lon)).ToString();
+
+                // 1. Получаем температуру и сохраняем в переменную
+                double currentTemperature = await GetTemperature(lat, lon);
+
+                // 2. Обновляем текст с температурой
+                temperatureLabel.Text = currentTemperature.ToString("F1"); // Форматируем до 1 знака после запятой
+
+                // 3. Добавляем логику для иконки
+                if (currentTemperature > 0)
+                {
+                    weatherIconLabel.Text = "🔥"; // Эмодзи жары
+                }
+                else if (currentTemperature < 0)
+                {
+                    weatherIconLabel.Text = "❄️"; // Эмодзи холода
+                }
+                else
+                {
+                    weatherIconLabel.Text = ""; // Если ровно 0, ничего не показываем
+                }
             }
             catch (Exception ex)
             {
+                // При ошибке сбрасываем значения
+                temperatureLabel.Text = "не понятно";
+                weatherIconLabel.Text = "";
                 messageLabel.Text += ex.Message;
             }
 
+            // --- Блок для курса валют (остается без изменений) ---
             try
             {
-                rateLabel.Text = $"1$ = {Convert.ToInt32(await GetDollarRate())}p.";
+                var (todayRate, yesterdayRate) = await GetCbrDollarRates();
+
+                TodayRateLabel.Text = $"Сегодня: {todayRate:F2} ₽";
+                YesterdayRateLabel.Text = $"Вчера: {yesterdayRate:F2} ₽";
+
+                if (todayRate > yesterdayRate)
+                {
+                    RateChangeIndicatorLabel.Text = "▲";
+                    RateChangeIndicatorLabel.TextColor = Colors.Green;
+                }
+                else if (todayRate < yesterdayRate)
+                {
+                    RateChangeIndicatorLabel.Text = "▼";
+                    RateChangeIndicatorLabel.TextColor = Colors.Red;
+                }
+                else
+                {
+                    RateChangeIndicatorLabel.Text = "▬";
+                    RateChangeIndicatorLabel.TextColor = Colors.Gray;
+                }
             }
             catch (Exception ex)
             {
@@ -76,17 +193,91 @@ namespace parserA
             }
         }
 
-        private void OnCounterClicked(object sender, EventArgs e)
+
+        // --- Код для фонарика (остается без изменений) ---
+        private async void OnCounterClicked(object sender, EventArgs e)
         {
             count++;
             CounterBtn.Text = $"Нажато {count} раз";
             SemanticScreenReader.Announce(CounterBtn.Text);
+
+            var status = await Permissions.RequestAsync<Permissions.Flashlight>();
+            if (status != PermissionStatus.Granted)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    messageLabel.Text = "Нет разрешения на использование фонарика.";
+                });
+                return;
+            }
+
+            if (_flashlightActive)
+            {
+                _flashlightCts.Cancel();
+                await Task.Delay(100);
+                _flashlightCts.Dispose();
+                _flashlightCts = new CancellationTokenSource();
+            }
+
+            _flashlightActive = true;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    for (int i = 0; i < count && _flashlightActive && !_flashlightCts.Token.IsCancellationRequested; i++)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOnAsync());
+                        await Task.Delay(200, _flashlightCts.Token);
+                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+                        await Task.Delay(200, _flashlightCts.Token);
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        messageLabel.Text = $"Ошибка при управлении фонариком: {ex.Message}";
+                    });
+                }
+                finally
+                {
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
+                    {
+                        try
+                        {
+                            await Flashlight.TurnOffAsync();
+                        }
+                        catch { }
+                        _flashlightActive = false;
+                    });
+                }
+            }, _flashlightCts.Token);
         }
 
-        private void OnResetClicked(object sender, EventArgs e)
+        private async void OnResetClicked(object sender, EventArgs e)
         {
             count = 0;
             CounterBtn.Text = "Нажать";
+            _flashlightActive = false;
+
+            if (!_flashlightCts.IsCancellationRequested)
+            {
+                _flashlightCts.Cancel();
+                try
+                {
+                    await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+                }
+                catch (Exception ex)
+                {
+                    messageLabel.Text = $"Ошибка при выключении фонарика: {ex.Message}";
+                }
+                _flashlightCts.Dispose();
+                _flashlightCts = new CancellationTokenSource();
+            }
+
+            SemanticScreenReader.Announce(CounterBtn.Text);
         }
     }
 }

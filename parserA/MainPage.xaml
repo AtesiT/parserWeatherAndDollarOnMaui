@@ -11,16 +11,36 @@
                         Aspect="AspectFill" />
         <ScrollView BackgroundColor="#5F000000">
             <VerticalStackLayout Padding="30,0" Spacing="25" HorizontalOptions="Center" VerticalOptions="Center">
-                <HorizontalStackLayout Spacing="3">
-                    <Label x:Name="rateLabel" Text="нажмите кнопку Обновить." />
-                    <Label LineBreakMode="WordWrap" Text="Курс доллара к рублю на сегодняшний день:" />
-                </HorizontalStackLayout>
+
+                <!-- НОВЫЙ БЛОК ДЛЯ ОТОБРАЖЕНИЯ КУРСА ДОЛЛАРА -->
+                <Frame Padding="10" CornerRadius="10" BackgroundColor="#33FFFFFF">
+                    <VerticalStackLayout Spacing="5">
+                        <Label Text="Курс доллара (ЦБ РФ):" FontSize="Medium" FontAttributes="Bold"/>
+                        <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
+                            <Label x:Name="TodayRateLabel" 
+                                   Text="Сегодня: ... " 
+                                   VerticalOptions="Center"/>
+                            <Label x:Name="YesterdayRateLabel" 
+                                   Text="Вчера: ... " 
+                                   VerticalOptions="Center"/>
+                            <Label x:Name="RateChangeIndicatorLabel" 
+                                   Text="" 
+                                   FontSize="20" 
+                                   FontAttributes="Bold"
+                                   VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Блок для погоды -->
                 <HorizontalStackLayout Spacing="3">
                     <Label Text="В " />
                     <Label BindingContext="{x:Reference cityEntry}" Text="{Binding Text}" />
                     <Label x:Name="temperatureLabel" Text="не понятно" />
+                    <Label x:Name="weatherIconLabel" FontSize="Large" VerticalOptions="Center"/>
                     <Label Text="градуса по цельсию" />
                 </HorizontalStackLayout>
+
                 <Entry x:Name="cityEntry" Placeholder="Введите название города:" PlaceholderColor="Aqua" />
                 <Button Clicked="UpdateButtonClicked" Text="Обновить" HorizontalOptions="Fill" />
                 <Button x:Name="CounterBtn" 
@@ -33,7 +53,8 @@
                         SemanticProperties.Hint="Reset the counter" 
                         Clicked="OnResetClicked" 
                         HorizontalOptions="Fill" />
-                <Label x:Name="messageLabel" LineBreakMode="CharacterWrap" />
+                <Label x:Name="messageLabel" LineBreakMode="CharacterWrap" TextColor="Yellow"/>
+
             </VerticalStackLayout>
         </ScrollView>
     </Grid>
