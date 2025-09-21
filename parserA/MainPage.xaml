@@ -12,7 +12,19 @@
         <ScrollView BackgroundColor="#5F000000">
             <VerticalStackLayout Padding="30,0" Spacing="25" HorizontalOptions="Center" VerticalOptions="Center">
 
-                <!-- НОВЫЙ БЛОК ДЛЯ ОТОБРАЖЕНИЯ КУРСА ДОЛЛАРА -->
+                <CarouselView x:Name="CityCarousel"
+                              HeightRequest="200"
+                              HorizontalOptions="Fill">
+                    <CarouselView.ItemTemplate>
+                        <DataTemplate>
+                            <Image Source="{Binding .}"
+                                   Aspect="AspectFill"
+                                   WidthRequest="300"
+                                   HeightRequest="200" />
+                        </DataTemplate>
+                    </CarouselView.ItemTemplate>
+                </CarouselView>
+
                 <Frame Padding="10" CornerRadius="10" BackgroundColor="#33FFFFFF">
                     <VerticalStackLayout Spacing="5">
                         <Label Text="Курс доллара (ЦБ РФ):" FontSize="Medium" FontAttributes="Bold"/>
@@ -32,7 +44,6 @@
                     </VerticalStackLayout>
                 </Frame>
 
-                <!-- Блок для погоды -->
                 <HorizontalStackLayout Spacing="3">
                     <Label Text="В " />
                     <Label BindingContext="{x:Reference cityEntry}" Text="{Binding Text}" />

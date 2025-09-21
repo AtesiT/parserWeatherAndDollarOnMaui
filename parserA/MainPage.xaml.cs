@@ -5,6 +5,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Devices;
 using System.Threading;
 using System.Globalization;
+using System.Collections.ObjectModel; // Добавлено для ObservableCollection
 
 namespace parserA
 {
@@ -27,7 +28,7 @@ namespace parserA
         public Dictionary<string, CbrCurrency> Valute { get; set; }
     }
 
-        // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ UNSPLASH API ---
+    // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ UNSPLASH API ---
 
     public class UnsplashSearchResult
     {
@@ -53,15 +54,21 @@ namespace parserA
     public partial class MainPage : ContentPage
     {
         private const string KEY = "58e310878dcae97b7fd2ed9b73f6d716";
-        private HttpClient _client = new HttpClient();
+        private const string UNSPLASH_KEY = "qFhqPBt0AzKHb8Ct_xibWdQLm9Cv4gjcWZJ8Xfk3ZC8";
+        private HttpClient _client;
         private int count = 0;
         private bool _flashlightActive = false;
         private CancellationTokenSource _flashlightCts;
+        private ObservableCollection<string> _imageSources; // Коллекция для слайд-шоу
 
         public MainPage()
         {
             InitializeComponent();
             _flashlightCts = new CancellationTokenSource();
+            _client = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) }; // Установка таймаута
+            _imageSources = new ObservableCollection<string>();
+            CityCarousel.ItemsSource = _imageSources; // Привязка коллекции к CarouselView
+
             // Установим культуру, чтобы точка была разделителем для double
             CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en-US");
             CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo("en-US");
@@ -124,6 +131,26 @@ namespace parserA
             throw new Exception("Не удалось получить температуру.");
         }
 
+        // --- НОВЫЙ МЕТОД ДЛЯ ПОИСКА КАРТИНОК НА UNSPLASH ---
+        private async Task<List<string>> GetCityImages(string city)
+        {
+            if (string.IsNullOrWhiteSpace(UNSPLASH_KEY) || UNSPLASH_KEY == "YOUR_UNSPLASH_ACCESS_KEY")
+            {
+                throw new Exception("Необходимо указать ключ Unsplash API.");
+            }
+            //var url = $"https://api.unsplash.com/search/photos?query={city}&client_id={UNSPLASH_KEY}&per_page=3";
+            var url = $"https://api.unsplash.com/search/photos?query={city}+cityscape&client_id={UNSPLASH_KEY}&per_page=3";
+            var response = await _client.GetFromJsonAsync<UnsplashSearchResult>(url);
+
+            if (response != null && response.Results != null && response.Results.Count > 0)
+            {
+                return response.Results.Select(p => p.Urls.Regular).ToList();
+            }
+
+            return new List<string>(); // Возвращаем пустой список, если картинок нет
+        }
+
+
         // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
 
         private async void UpdateButtonClicked(object sender, EventArgs e)
@@ -154,6 +181,21 @@ namespace parserA
                 {
                     weatherIconLabel.Text = ""; // Если ровно 0, ничего не показываем
                 }
+
+                // --- НОВЫЙ БЛОК ДЛЯ СЛАЙД-ШОУ ---
+                var imageUrls = await GetCityImages(cityEntry.Text);
+                _imageSources.Clear();
+                if (imageUrls.Count > 0)
+                {
+                    foreach (var url in imageUrls)
+                    {
+                        _imageSources.Add(url);
+                    }
+                }
+                else
+                {
+                    messageLabel.Text += "Не удалось найти картинки для этого города.";
+                }
             }
             catch (Exception ex)
             {
@@ -161,6 +203,7 @@ namespace parserA
                 temperatureLabel.Text = "не понятно";
                 weatherIconLabel.Text = "";
                 messageLabel.Text += ex.Message;
+                _imageSources.Clear(); // Очищаем слайд-шоу при ошибке
             }
 
             // --- Блок для курса валют (остается без изменений) ---
