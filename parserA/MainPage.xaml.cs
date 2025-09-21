@@ -5,13 +5,11 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Devices;
 using System.Threading;
 using System.Globalization;
-using System.Collections.ObjectModel; // Добавлено для ObservableCollection
+using System.Collections.ObjectModel;
 
 namespace parserA
 {
     // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ ЦБ РФ ---
-
-    // Модель для одной валюты
     public class CbrCurrency
     {
         [JsonPropertyName("Value")]
@@ -21,7 +19,6 @@ namespace parserA
         public double Previous { get; set; }
     }
 
-    // Корневая модель ответа API
     public class CbrRates
     {
         [JsonPropertyName("Valute")]
@@ -29,7 +26,6 @@ namespace parserA
     }
 
     // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ UNSPLASH API ---
-
     public class UnsplashSearchResult
     {
         [JsonPropertyName("results")]
@@ -57,39 +53,24 @@ namespace parserA
         private const string UNSPLASH_KEY = "qFhqPBt0AzKHb8Ct_xibWdQLm9Cv4gjcWZJ8Xfk3ZC8";
         private HttpClient _client;
         private int count = 0;
-        private bool _flashlightActive = false;
+        private bool _isFlashing = false; // Флаг для управления состоянием фонарика
         private CancellationTokenSource _flashlightCts;
-        private ObservableCollection<string> _imageSources; // Коллекция для слайд-шоу
+        private ObservableCollection<string> _imageSources;
 
         public MainPage()
         {
             InitializeComponent();
             _flashlightCts = new CancellationTokenSource();
-            _client = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) }; // Установка таймаута
+            _client = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
             _imageSources = new ObservableCollection<string>();
-            CityCarousel.ItemsSource = _imageSources; // Привязка коллекции к CarouselView
+            CityCarousel.ItemsSource = _imageSources;
 
-            // Установим культуру, чтобы точка была разделителем для double
             CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en-US");
             CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo("en-US");
         }
 
         // --- МЕТОДЫ ДЛЯ РАБОТЫ С API ---
 
-        // Старый метод, больше не используется. Можно удалить.
-        private async Task<double> GetDollarRate()
-        {
-            var data = await _client.GetFromJsonAsync<JsonDocument>(
-                "https://www.floatrates.com/daily/usd.json"
-            ) ?? throw new Exception("Не удалось загрузить данные по доллару.");
-            if (data.RootElement.TryGetProperty("rub", out JsonElement currency)
-                && currency.TryGetProperty("rate", out JsonElement rate)
-                && rate.TryGetDouble(out double value))
-                return value;
-            throw new Exception("Не удалось получить стоимость доллара.");
-        }
-
-        // НОВЫЙ МЕТОД для получения курсов с сайта ЦБ РФ
         private async Task<(double today, double yesterday)> GetCbrDollarRates()
         {
             var rates = await _client.GetFromJsonAsync<CbrRates>(
@@ -131,14 +112,12 @@ namespace parserA
             throw new Exception("Не удалось получить температуру.");
         }
 
-        // --- НОВЫЙ МЕТОД ДЛЯ ПОИСКА КАРТИНОК НА UNSPLASH ---
         private async Task<List<string>> GetCityImages(string city)
         {
             if (string.IsNullOrWhiteSpace(UNSPLASH_KEY) || UNSPLASH_KEY == "YOUR_UNSPLASH_ACCESS_KEY")
             {
                 throw new Exception("Необходимо указать ключ Unsplash API.");
             }
-            //var url = $"https://api.unsplash.com/search/photos?query={city}&client_id={UNSPLASH_KEY}&per_page=3";
             var url = $"https://api.unsplash.com/search/photos?query={city}+cityscape&client_id={UNSPLASH_KEY}&per_page=3";
             var response = await _client.GetFromJsonAsync<UnsplashSearchResult>(url);
 
@@ -147,7 +126,7 @@ namespace parserA
                 return response.Results.Select(p => p.Urls.Regular).ToList();
             }
 
-            return new List<string>(); // Возвращаем пустой список, если картинок нет
+            return new List<string>();
         }
 
 
@@ -157,32 +136,14 @@ namespace parserA
         {
             messageLabel.Text = string.Empty;
 
-            // --- Блок для погоды ---
             try
             {
                 (double lat, double lon) = await GetLocationByName(cityEntry.Text);
 
-                // 1. Получаем температуру и сохраняем в переменную
                 double currentTemperature = await GetTemperature(lat, lon);
+                temperatureLabel.Text = currentTemperature.ToString("F1");
+                weatherIconLabel.Text = currentTemperature > 0 ? "🔥" : currentTemperature < 0 ? "❄️" : "";
 
-                // 2. Обновляем текст с температурой
-                temperatureLabel.Text = currentTemperature.ToString("F1"); // Форматируем до 1 знака после запятой
-
-                // 3. Добавляем логику для иконки
-                if (currentTemperature > 0)
-                {
-                    weatherIconLabel.Text = "🔥"; // Эмодзи жары
-                }
-                else if (currentTemperature < 0)
-                {
-                    weatherIconLabel.Text = "❄️"; // Эмодзи холода
-                }
-                else
-                {
-                    weatherIconLabel.Text = ""; // Если ровно 0, ничего не показываем
-                }
-
-                // --- НОВЫЙ БЛОК ДЛЯ СЛАЙД-ШОУ ---
                 var imageUrls = await GetCityImages(cityEntry.Text);
                 _imageSources.Clear();
                 if (imageUrls.Count > 0)
@@ -199,18 +160,15 @@ namespace parserA
             }
             catch (Exception ex)
             {
-                // При ошибке сбрасываем значения
                 temperatureLabel.Text = "не понятно";
                 weatherIconLabel.Text = "";
                 messageLabel.Text += ex.Message;
-                _imageSources.Clear(); // Очищаем слайд-шоу при ошибке
+                _imageSources.Clear();
             }
 
-            // --- Блок для курса валют (остается без изменений) ---
             try
             {
                 var (todayRate, yesterdayRate) = await GetCbrDollarRates();
-
                 TodayRateLabel.Text = $"Сегодня: {todayRate:F2} ₽";
                 YesterdayRateLabel.Text = $"Вчера: {yesterdayRate:F2} ₽";
 
@@ -237,7 +195,7 @@ namespace parserA
         }
 
 
-        // --- Код для фонарика (остается без изменений) ---
+        // --- ОБНОВЛЁННЫЙ КОД ДЛЯ ФОНАРИКА ---
         private async void OnCounterClicked(object sender, EventArgs e)
         {
             count++;
@@ -254,71 +212,57 @@ namespace parserA
                 return;
             }
 
-            if (_flashlightActive)
+            // Запускаем задачу только если она еще не запущена
+            if (!_isFlashing)
             {
-                _flashlightCts.Cancel();
-                await Task.Delay(100);
-                _flashlightCts.Dispose();
-                _flashlightCts = new CancellationTokenSource();
-            }
+                _isFlashing = true;
 
-            _flashlightActive = true;
-
-            _ = Task.Run(async () =>
-            {
-                try
+                _ = Task.Run(async () =>
                 {
-                    for (int i = 0; i < count && _flashlightActive && !_flashlightCts.Token.IsCancellationRequested; i++)
+                    try
                     {
-                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOnAsync());
-                        await Task.Delay(200, _flashlightCts.Token);
-                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
-                        await Task.Delay(200, _flashlightCts.Token);
-                    }
-                }
-                catch (OperationCanceledException) { }
-                catch (Exception ex)
-                {
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        messageLabel.Text = $"Ошибка при управлении фонариком: {ex.Message}";
-                    });
-                }
-                finally
-                {
-                    await MainThread.InvokeOnMainThreadAsync(async () =>
-                    {
-                        try
+                        // Цикл будет работать, пока i меньше текущего значения count
+                        for (int i = 0; i < count && !_flashlightCts.Token.IsCancellationRequested; i++)
                         {
-                            await Flashlight.TurnOffAsync();
+                            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOnAsync());
+                            await Task.Delay(200, _flashlightCts.Token);
+                            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+                            await Task.Delay(200, _flashlightCts.Token);
                         }
-                        catch { }
-                        _flashlightActive = false;
-                    });
-                }
-            }, _flashlightCts.Token);
+                    }
+                    catch (OperationCanceledException) { }
+                    finally
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(async () =>
+                        {
+                            try
+                            {
+                                await Flashlight.TurnOffAsync();
+                            }
+                            catch { }
+                            _isFlashing = false;
+                        });
+                    }
+                }, _flashlightCts.Token);
+            }
         }
 
         private async void OnResetClicked(object sender, EventArgs e)
         {
             count = 0;
             CounterBtn.Text = "Нажать";
-            _flashlightActive = false;
 
+            // Отменяем текущую задачу, если она есть
             if (!_flashlightCts.IsCancellationRequested)
             {
                 _flashlightCts.Cancel();
-                try
-                {
-                    await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
-                }
-                catch (Exception ex)
-                {
-                    messageLabel.Text = $"Ошибка при выключении фонарика: {ex.Message}";
-                }
                 _flashlightCts.Dispose();
                 _flashlightCts = new CancellationTokenSource();
             }
+
+            // Выключаем фонарик, если он был включен
+            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+            _isFlashing = false;
 
             SemanticScreenReader.Announce(CounterBtn.Text);
         }
