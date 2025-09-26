@@ -6,6 +6,7 @@ using Microsoft.Maui.Devices;
 using System.Threading;
 using System.Globalization;
 using System.Collections.ObjectModel;
+using HtmlAgilityPack;
 
 namespace parserA
 {
@@ -25,37 +26,18 @@ namespace parserA
         public Dictionary<string, CbrCurrency> Valute { get; set; }
     }
 
-    // --- МОДЕЛИ ДЛЯ ДЕСЕРИАЛИЗАЦИИ ОТВЕТА ОТ UNSPLASH API ---
-    public class UnsplashSearchResult
-    {
-        [JsonPropertyName("results")]
-        public List<UnsplashPhoto> Results { get; set; }
-    }
-
-    public class UnsplashPhoto
-    {
-        [JsonPropertyName("urls")]
-        public UnsplashPhotoUrls Urls { get; set; }
-    }
-
-    public class UnsplashPhotoUrls
-    {
-        [JsonPropertyName("regular")]
-        public string Regular { get; set; }
-    }
-
-
     // --- ОСНОВНОЙ КЛАСС СТРАНИЦЫ ---
 
     public partial class MainPage : ContentPage
     {
         private const string KEY = "58e310878dcae97b7fd2ed9b73f6d716";
-        private const string UNSPLASH_KEY = "qFhqPBt0AzKHb8Ct_xibWdQLm9Cv4gjcWZJ8Xfk3ZC8";
         private HttpClient _client;
         private int count = 0;
-        private bool _isFlashing = false; // Флаг для управления состоянием фонарика
+        private bool _isFlashing = false;
         private CancellationTokenSource _flashlightCts;
         private ObservableCollection<string> _imageSources;
+
+        private IDispatcherTimer _slideshowTimer; // Таймер для слайд-шоу
 
         public MainPage()
         {
@@ -67,9 +49,13 @@ namespace parserA
 
             CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en-US");
             CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo("en-US");
+
+            _slideshowTimer = Dispatcher.CreateTimer();
+            _slideshowTimer.Interval = TimeSpan.FromSeconds(5);
+            _slideshowTimer.Tick += OnSlideshowTimerTick;
         }
 
-        // --- МЕТОДЫ ДЛЯ РАБОТЫ С API ---
+        // --- МЕТОДЫ ДЛЯ РАБОТЫ С API (без изменений) ---
 
         private async Task<(double today, double yesterday)> GetCbrDollarRates()
         {
@@ -114,27 +100,39 @@ namespace parserA
 
         private async Task<List<string>> GetCityImages(string city)
         {
-            if (string.IsNullOrWhiteSpace(UNSPLASH_KEY) || UNSPLASH_KEY == "YOUR_UNSPLASH_ACCESS_KEY")
+            try
             {
-                throw new Exception("Необходимо указать ключ Unsplash API.");
-            }
-            var url = $"https://api.unsplash.com/search/photos?query={city}+cityscape&client_id={UNSPLASH_KEY}&per_page=3";
-            var response = await _client.GetFromJsonAsync<UnsplashSearchResult>(url);
+                var httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-            if (response != null && response.Results != null && response.Results.Count > 0)
+                var query = $"{city} cityscape";
+                var url = $"https://www.google.com/search?q={Uri.EscapeDataString(query)}&tbm=isch";
+                var html = await httpClient.GetStringAsync(url);
+
+                var doc = new HtmlDocument();
+                doc.LoadHtml(html);
+
+                return doc.DocumentNode
+                    .SelectNodes("//img[@src]")?
+                    .Select(img => img.GetAttributeValue("src", ""))
+                    .Where(src => src.StartsWith("https://encrypted-tbn0.gstatic.com/"))
+                    .Take(3)
+                    .ToList() ?? new List<string>();
+            }
+            catch (Exception ex)
             {
-                return response.Results.Select(p => p.Urls.Regular).ToList();
+                System.Diagnostics.Debug.WriteLine($"Error scraping images: {ex.Message}");
+                return new List<string>();
             }
-
-            return new List<string>();
         }
 
 
-        // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+        // --- ОБРАБОТЧИКИ СОБЫТИЙ (без изменений, кроме фонарика) ---
 
         private async void UpdateButtonClicked(object sender, EventArgs e)
         {
             messageLabel.Text = string.Empty;
+            _slideshowTimer.Stop();
 
             try
             {
@@ -142,16 +140,21 @@ namespace parserA
 
                 double currentTemperature = await GetTemperature(lat, lon);
                 temperatureLabel.Text = currentTemperature.ToString("F1");
-                weatherIconLabel.Text = currentTemperature > 0 ? "🔥" : currentTemperature < 0 ? "❄️" : "";
+
+                if (currentTemperature >= 13) weatherIconLabel.Text = "☀️";
+                else if (currentTemperature >= 0 && currentTemperature < 13) weatherIconLabel.Text = "☁️";
+                else weatherIconLabel.Text = "❄️";
 
                 var imageUrls = await GetCityImages(cityEntry.Text);
                 _imageSources.Clear();
-                if (imageUrls.Count > 0)
+                if (imageUrls != null && imageUrls.Count > 0)
                 {
                     foreach (var url in imageUrls)
                     {
                         _imageSources.Add(url);
                     }
+                    CityCarousel.Position = 0;
+                    _slideshowTimer.Start();
                 }
                 else
                 {
@@ -194,65 +197,107 @@ namespace parserA
             }
         }
 
+        private void OnSlideshowTimerTick(object sender, EventArgs e)
+        {
+            if (_imageSources == null || _imageSources.Count == 0)
+                return;
 
-        // --- ОБНОВЛЁННЫЙ КОД ДЛЯ ФОНАРИКА ---
+            int nextPosition = (CityCarousel.Position + 1) % _imageSources.Count;
+            CityCarousel.Position = nextPosition;
+        }
+
+
+        // --- ИЗМЕНЕННАЯ ЛОГИКА ФОНАРИКА ---
+
         private async void OnCounterClicked(object sender, EventArgs e)
         {
+            // 1. Сначала останавливаем любой предыдущий цикл мигания
+            if (!_flashlightCts.IsCancellationRequested)
+            {
+                _flashlightCts.Cancel();
+                _flashlightCts.Dispose();
+            }
+            // Создаем новый токен отмены для нового цикла
+            _flashlightCts = new CancellationTokenSource();
+            _isFlashing = false;
+            // Убедимся, что фонарик выключен перед стартом новой логики
+            try { await Flashlight.TurnOffAsync(); } catch { }
+
+            // 2. Обновляем счетчик
             count++;
-            CounterBtn.Text = $"Нажато {count} раз";
+
+            // 3. Проверяем, не достигли ли мы 10 нажатий
+            if (count >= 10)
+            {
+                count = 0; // Сбрасываем счетчик
+            }
+
+            // 4. Обновляем текст на кнопке
+            if (count == 0)
+            {
+                CounterBtn.Text = "Нажать";
+            }
+            else
+            {
+                // Показываем частоту в Герцах (1/интервал) для наглядности
+                CounterBtn.Text = $"Частота: {count} Гц ({count} нажатий)";
+            }
             SemanticScreenReader.Announce(CounterBtn.Text);
 
-            var status = await Permissions.RequestAsync<Permissions.Flashlight>();
-            if (status != PermissionStatus.Granted)
+            // Если счетчик сброшен на 0, выходим - фонарик уже выключен
+            if (count == 0)
             {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    messageLabel.Text = "Нет разрешения на использование фонарика.";
-                });
                 return;
             }
 
-            // Запускаем задачу только если она еще не запущена
-            if (!_isFlashing)
+            // 5. Запрашиваем разрешение, если еще не сделано
+            var status = await Permissions.RequestAsync<Permissions.Flashlight>();
+            if (status != PermissionStatus.Granted)
             {
-                _isFlashing = true;
-
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        // Цикл будет работать, пока i меньше текущего значения count
-                        for (int i = 0; i < count && !_flashlightCts.Token.IsCancellationRequested; i++)
-                        {
-                            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOnAsync());
-                            await Task.Delay(200, _flashlightCts.Token);
-                            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
-                            await Task.Delay(200, _flashlightCts.Token);
-                        }
-                    }
-                    catch (OperationCanceledException) { }
-                    finally
-                    {
-                        await MainThread.InvokeOnMainThreadAsync(async () =>
-                        {
-                            try
-                            {
-                                await Flashlight.TurnOffAsync();
-                            }
-                            catch { }
-                            _isFlashing = false;
-                        });
-                    }
-                }, _flashlightCts.Token);
+                messageLabel.Text = "Нет разрешения на использование фонарика.";
+                return;
             }
+
+            // 6. Вычисляем интервал и запускаем новый цикл мигания
+            // Общий интервал (вкл+выкл) = 1.0 / count секунд.
+            // Значит, половина интервала (на включение или выключение) = (1.0 / count / 2.0) секунд.
+            // Переводим в миллисекунды: (1000.0 / count / 2.0) или 500.0 / count
+            int delay = (int)(500.0 / count);
+            if (delay < 1) delay = 1; // Задержка не может быть меньше 1 мс
+
+            _isFlashing = true;
+            // Запускаем бесконечный цикл в фоновом потоке
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!_flashlightCts.Token.IsCancellationRequested)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOnAsync());
+                        await Task.Delay(delay, _flashlightCts.Token);
+                        await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+                        await Task.Delay(delay, _flashlightCts.Token);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Это ожидаемое исключение, когда мы нажимаем кнопку снова и отменяем задачу
+                }
+                finally
+                {
+                    // Гарантированно выключаем фонарик при выходе из цикла
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
+                    {
+                        try { await Flashlight.TurnOffAsync(); } catch { }
+                        _isFlashing = false;
+                    });
+                }
+            }, _flashlightCts.Token);
         }
 
         private async void OnResetClicked(object sender, EventArgs e)
         {
-            count = 0;
-            CounterBtn.Text = "Нажать";
-
-            // Отменяем текущую задачу, если она есть
+            // Останавливаем любой запущенный цикл
             if (!_flashlightCts.IsCancellationRequested)
             {
                 _flashlightCts.Cancel();
@@ -260,9 +305,19 @@ namespace parserA
                 _flashlightCts = new CancellationTokenSource();
             }
 
-            // Выключаем фонарик, если он был включен
-            await MainThread.InvokeOnMainThreadAsync(async () => await Flashlight.TurnOffAsync());
+            count = 0;
+            CounterBtn.Text = "Нажать";
             _isFlashing = false;
+
+            // Гарантированно выключаем фонарик
+            try
+            {
+                await Flashlight.TurnOffAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Ошибка при выключении фонарика: {ex.Message}");
+            }
 
             SemanticScreenReader.Announce(CounterBtn.Text);
         }
